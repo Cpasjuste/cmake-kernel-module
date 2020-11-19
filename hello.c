@@ -19,10 +19,11 @@ MODULE_VERSION("0.1");
 static char read_buf[READ_SIZE_MAX];
 static char *timings_path = "/boot/timings.txt";
 
-static int drm_display_mode_from_timings(const char *line, struct drm_display_mode *mode) {
+static struct drm_display_mode *drm_display_mode_from_timings(struct drm_connector *connector, const char *line) {
 
-    struct videomode vm;
     int ret, hsync, vsync, interlace;
+    struct drm_display_mode *mode = NULL;
+    struct videomode vm;
 
     if (line != NULL) {
         //memset(&vm, 0, sizeof(vm));
@@ -33,7 +34,7 @@ static int drm_display_mode_from_timings(const char *line, struct drm_display_mo
         if (ret != 12) {
             printk(KERN_WARNING
                    "[CRT_DRM]: malformed mode requested, skipping (%s)\n", line);
-            return 1;
+            return NULL;
         }
 
         // setup flags
@@ -41,24 +42,23 @@ static int drm_display_mode_from_timings(const char *line, struct drm_display_mo
         vm.flags |= hsync ? DRM_MODE_FLAG_NHSYNC : DRM_MODE_FLAG_PHSYNC;
         vm.flags |= vsync ? DRM_MODE_FLAG_NVSYNC : DRM_MODE_FLAG_PVSYNC;
 
-        /*
-        mode = drm_mode_create(connector->dev);
+        // create/init display mode, convert from video mode
+        mode = drm_mode_create(NULL); // TODO
         if (mode == NULL) {
             printk(KERN_WARNING
-                   "[CRT_DRM]: malformed mode requested, skipping (%s)\n", line);
-            return 1;
+                   "[CRT_DRM]: drm_mode_create failed, skipping (%s)\n", line);
+            return NULL;
         }
-        */
-
+        mode->type = DRM_MODE_TYPE_DRIVER;
         drm_display_mode_from_videomode(&vm, mode);
 
-        return 0;
+        return mode;
     }
 
-    return 1;
+    return NULL;
 }
 
-int drm_display_mode_load_timings(void) {
+int drm_display_mode_load_timings(struct drm_connector *connector) {
 
     struct file *fp = NULL;
     ssize_t read_size = 0;
@@ -66,7 +66,7 @@ int drm_display_mode_load_timings(void) {
     char line[LINE_SIZE_MAX];
     size_t line_start = 0;
     size_t line_len = 0;
-    struct drm_display_mode mode; // = NULL;
+    struct drm_display_mode *mode = NULL;
 
     fp = filp_open(timings_path, O_RDONLY, 0);
     if (IS_ERR(fp) || !fp) {
@@ -90,9 +90,10 @@ int drm_display_mode_load_timings(void) {
         if (line_len >= LINE_SIZE_MAX || read_buf[cursor] == '\n' || read_buf[cursor] == '\0') {
             if (line_len > 32 && line[0] != '#') {
                 line[line_len - 1] = '\0';
-                if (drm_display_mode_from_timings(line, &mode) == 0) {
+                if ((mode = drm_display_mode_from_timings(connector, line)) != NULL) {
                     printk(KERN_INFO
-                           "[CRT_DRM]: mode: " DRM_MODE_FMT, DRM_MODE_ARG(&mode));
+                           "[CRT_DRM]: mode: " DRM_MODE_FMT, DRM_MODE_ARG(mode));
+                    drm_mode_probed_add(connector, mode);
                 }
             }
             line_start += line_len;
@@ -109,7 +110,7 @@ static int __init hello_start(void) {
     printk(KERN_INFO
            "[CRT_DRM]: CTR_DRM module loaded\n");
 
-    drm_display_mode_load_timings();
+    drm_display_mode_load_timings(NULL);
 
     return 0;
 }
