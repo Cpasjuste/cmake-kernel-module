@@ -26,7 +26,7 @@ static struct drm_display_mode *drm_display_mode_from_timings(struct drm_connect
     struct videomode vm;
 
     if (line != NULL) {
-        //memset(&vm, 0, sizeof(vm));
+        memset(&vm, 0, sizeof(vm));
         ret = sscanf(line, "%d %d %d %d %d %d %d %d %d %d %*s %*s %*s %*s %d %ld %*s",
                      &vm.hactive, &hsync, &vm.hfront_porch, &vm.hsync_len, &vm.hback_porch,
                      &vm.vactive, &vsync, &vm.vfront_porch, &vm.vsync_len, &vm.vback_porch,
@@ -43,7 +43,7 @@ static struct drm_display_mode *drm_display_mode_from_timings(struct drm_connect
         vm.flags |= vsync ? DRM_MODE_FLAG_NVSYNC : DRM_MODE_FLAG_PVSYNC;
 
         // create/init display mode, convert from video mode
-        mode = drm_mode_create(NULL); // TODO
+        mode = drm_mode_create(connector->dev);
         if (mode == NULL) {
             printk(KERN_WARNING
                    "[CRT_DRM]: drm_mode_create failed, skipping (%s)\n", line);
@@ -67,12 +67,13 @@ int drm_display_mode_load_timings(struct drm_connector *connector) {
     size_t line_start = 0;
     size_t line_len = 0;
     struct drm_display_mode *mode = NULL;
+    int mode_count = 0;
 
     fp = filp_open(timings_path, O_RDONLY, 0);
     if (IS_ERR(fp) || !fp) {
         printk(KERN_WARNING
                "[CRT_DRM]: timings file not found, skipping custom modes loading\n");
-        return -1;
+        return 0;
     }
 
     read_size = kernel_read(fp, &read_buf, READ_SIZE_MAX, &fp->f_pos);
@@ -80,7 +81,7 @@ int drm_display_mode_load_timings(struct drm_connector *connector) {
         filp_close(fp, NULL);
         printk(KERN_WARNING
                "[CRT_DRM]: empty timings file found, skipping custom modes loading\n");
-        return -1;
+        return 0;
     }
     filp_close(fp, NULL);
 
@@ -94,6 +95,7 @@ int drm_display_mode_load_timings(struct drm_connector *connector) {
                     printk(KERN_INFO
                            "[CRT_DRM]: mode: " DRM_MODE_FMT, DRM_MODE_ARG(mode));
                     drm_mode_probed_add(connector, mode);
+                    mode_count++;
                 }
             }
             line_start += line_len;
@@ -102,7 +104,7 @@ int drm_display_mode_load_timings(struct drm_connector *connector) {
         }
     }
 
-    return 0;
+    return mode_count;
 }
 
 static int __init hello_start(void) {
